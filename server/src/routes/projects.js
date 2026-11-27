@@ -17,7 +17,7 @@ const router = Router();
 // ----- Helper validasi -----
 function validateProjectBody(body, requireName = true) {
   const errors = [];
-  const { name, client, category } = body;
+  const { name, client } = body;
 
   if (requireName && (!name || !String(name).trim())) {
     errors.push('name wajib diisi.');
