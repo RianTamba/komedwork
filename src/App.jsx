@@ -8,6 +8,7 @@ import {
   History,
   Settings,
   Search,
+  Columns3,
   Bell,
   Plus,
   ChevronDown,
@@ -27,7 +28,7 @@ import {
   SettingsPage,
   TeamPage,
 } from './WorkspacePages.jsx'
-import TaskDialog from './TaskDialog.jsx'
+import KanbanPage from './KanbanPage.jsx'
 import { DeleteTaskDialog, TaskEditorModal } from './TaskDialogs.jsx'
 import {
   formatDueDate,
@@ -48,6 +49,7 @@ import {
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard },
   { name: 'My Tasks', icon: ListTodo },
+  { name: 'Kanban', icon: Columns3 },
   { name: 'Projects', icon: FolderKanban },
   { name: 'Team', icon: Users },
   { name: 'History', icon: History },
@@ -161,7 +163,7 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
   const completedTasks = tasks.filter((task) => task.status === 'Completed').length
   const inProgressTasks = tasks.filter((task) => task.status === 'In Progress').length
   const toDoTasks = tasks.filter((task) => task.status === 'To Do').length
-  const inReviewTasks = tasks.filter((task) => task.status === 'In Review').length
+  const reviewTasks = tasks.filter((task) => task.status === 'Review').length
   const overdueTasks = tasks.filter(
     (task) => task.dueDate && task.dueDate < today && task.status !== 'Completed',
   ).length
@@ -307,8 +309,8 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
               <span className="font-medium text-slate-700">{toDoTasks}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">In Review</span>
-              <span className="font-medium text-slate-700">{inReviewTasks}</span>
+              <span className="text-slate-500">Review</span>
+              <span className="font-medium text-slate-700">{reviewTasks}</span>
             </div>
           </div>
         </div>
@@ -466,7 +468,6 @@ export default function App() {
   const [projects, setProjects] = useState(initialWorkspace.projects)
   const [activePage, setActivePage] = useState('Dashboard')
   const [taskEditor, setTaskEditor] = useState(null)
-  const [taskToEdit, setTaskToEdit] = useState(null)
   const [taskToDelete, setTaskToDelete] = useState(null)
 
   useEffect(() => {
@@ -517,30 +518,46 @@ export default function App() {
   }
 
   function saveTask(values) {
-    const project = projects.find((item) => item.id === values.projectId)
-    setTasks((current) => {
-      const nextId = current.reduce((maxId, task) => Math.max(maxId, task.id), 0) + 1
-      return [
-        {
-          ...values,
-          id: nextId,
-          title: values.title.trim(),
-          projectId: project?.id ?? '',
-          project: project?.name ?? '',
-          category: 'Task',
-        },
-        ...current,
-      ]
-    })
-    setTaskEditor(null)
-  }
+    const title = values.title?.trim() ?? ''
+    if (!title) return
 
-  function saveTaskChanges(values) {
-    if (!taskToEdit) return
-    setTasks((current) => current.map((task) =>
-      task.id === taskToEdit.id ? { ...task, ...values } : task,
-    ))
-    setTaskToEdit(null)
+    const matchedProject = projects.find((item) => item.id === values.projectId)
+    const projectId = matchedProject?.id ?? ''
+    const project = matchedProject?.name ?? ''
+
+    if (taskEditor?.mode === 'edit' && taskEditor?.task) {
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === taskEditor.task.id
+            ? {
+                ...task,
+                ...values,
+                title,
+                projectId,
+                project,
+                id: task.id,
+                category: task.category ?? 'Task',
+              }
+            : task,
+        ),
+      )
+    } else {
+      setTasks((current) => {
+        const nextId = current.reduce((maxId, task) => Math.max(maxId, task.id), 0) + 1
+        return [
+          {
+            ...values,
+            id: nextId,
+            title,
+            projectId,
+            project,
+            category: 'Task',
+          },
+          ...current,
+        ]
+      })
+    }
+    setTaskEditor(null)
   }
 
   function confirmDeleteTask() {
@@ -550,8 +567,7 @@ export default function App() {
   }
 
   function openTaskEditor(mode, task = null) {
-    if (mode === 'edit') setTaskToEdit(task)
-    else setTaskEditor({ mode, task })
+    setTaskEditor({ mode, task })
   }
 
   const pageContent = {
@@ -572,6 +588,7 @@ export default function App() {
         onDeleteTask={setTaskToDelete}
       />
     ),
+    Kanban: <KanbanPage tasks={tasks} setTasks={setTasks} />,
     Projects: (
       <ProjectsPage
         projects={projects}
@@ -610,15 +627,6 @@ export default function App() {
           priorities={priorities}
           statuses={statuses}
           projects={projects}
-        />
-      )}
-      {taskToEdit && (
-        <TaskDialog
-          key={taskToEdit.id}
-          task={taskToEdit}
-          projects={projects}
-          onClose={() => setTaskToEdit(null)}
-          onSubmit={saveTaskChanges}
         />
       )}
       {taskToDelete && (

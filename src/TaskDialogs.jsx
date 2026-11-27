@@ -20,15 +20,21 @@ export function TaskEditorModal({
   const [formError, setFormError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submitLock = useRef(false)
-  const [values, setValues] = useState(() => ({
-    title: task?.title ?? '',
-    description: task?.description ?? '',
-    project: task?.project ?? '',
-    projectId: task?.projectId ?? '',
-    priority: task?.priority ?? 'Medium',
-    status: task?.status ?? 'To Do',
-    dueDate: task?.dueDate ?? '',
-  }))
+  const [values, setValues] = useState(() => {
+    const matchedProject = projects.find((item) => item.id === task?.projectId)
+      ?? projects.find(
+        (item) => item.name.trim().toLowerCase() === task?.project?.trim().toLowerCase(),
+      )
+    return {
+      title: task?.title ?? '',
+      description: task?.description ?? '',
+      project: matchedProject?.name ?? '',
+      projectId: matchedProject?.id ?? task?.projectId ?? '',
+      priority: task?.priority ?? 'Medium',
+      status: task?.status ?? 'To Do',
+      dueDate: task?.dueDate ?? '',
+    }
+  })
 
   useEffect(() => {
     function handleKeyDown(event) {
