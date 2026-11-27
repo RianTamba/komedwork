@@ -134,19 +134,13 @@ function TaskTable({
   )
 }
 
-function updateTaskStatus(setTasks, taskId, status) {
-  setTasks((current) =>
-    current.map((task) => task.id === taskId ? { ...task, status } : task),
-  )
-}
-
 function getLocalToday() {
   const date = new Date()
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
   return date.toISOString().slice(0, 10)
 }
 
-export function MyTasksPage({ tasks, setTasks, onEditTask, onDeleteTask }) {
+export function MyTasksPage({ tasks, onUpdateTaskStatus, onEditTask, onDeleteTask }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
   const [priorityFilter, setPriorityFilter] = useState('All priorities')
@@ -339,7 +333,7 @@ export function MyTasksPage({ tasks, setTasks, onEditTask, onDeleteTask }) {
         </div>
         <TaskTable
           tasks={sortedTasks}
-          onStatusChange={(taskId, status) => updateTaskStatus(setTasks, taskId, status)}
+          onStatusChange={(taskId, status) => onUpdateTaskStatus(taskId, status)}
           onEditTask={onEditTask}
           onDeleteTask={onDeleteTask}
           emptyMessage="No tasks match your current search and filters."

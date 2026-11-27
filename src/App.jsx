@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   LayoutDashboard,
   ListTodo,
@@ -32,19 +32,20 @@ import KanbanPage from './KanbanPage.jsx'
 import { DeleteTaskDialog, TaskEditorModal } from './TaskDialogs.jsx'
 import {
   formatDueDate,
-  loadTasks,
   priorities,
-  saveTasks,
   statuses,
   statusColors,
 } from './taskData.js'
 import {
-  createProjectId,
-  createProjectsFromTasks,
-  linkTasksToProjects,
-  loadProjects,
-  saveProjects,
-} from './projectData.js'
+  fetchTasks,
+  createTask,
+  updateTask,
+  deleteTask as apiDeleteTask,
+  fetchProjects,
+  createProject as apiCreateProject,
+  updateProject as apiUpdateProject,
+  deleteProject as apiDeleteProject,
+} from './api.js'
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard },
@@ -153,7 +154,7 @@ function StatCard({ title, value, subtitle, icon: Icon, iconColor, iconBg }) {
   )
 }
 
-function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
+function Dashboard({ tasks, onUpdateTaskStatus, onAddTask, onEditTask, onDeleteTask }) {
   const [search, setSearch] = useState('')
   const [today] = useState(() => {
     const localToday = new Date()
@@ -192,7 +193,7 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
             Dashboard
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Welcome back! Here's what's happening with your work.
+            Welcome back! Here&apos;s what&apos;s happening with your work.
           </p>
         </div>
 
@@ -389,14 +390,7 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
                     <td className="px-6 py-4">
                       <select
                         value={task.status}
-                        onChange={(event) => {
-                          const status = event.target.value
-                          setTasks((current) =>
-                            current.map((item) =>
-                              item.id === task.id ? { ...item, status } : item,
-                            ),
-                          )
-                        }}
+                        onChange={(event) => onUpdateTaskStatus(task.id, event.target.value)}
                         aria-label={`Change status for ${task.title}`}
                         className={`cursor-pointer appearance-none rounded-full border-0 px-2.5 py-1 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-violet-300 ${statusColors[task.status]}`}
                       >
@@ -435,7 +429,7 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
               ) : (
                 <tr>
                   <td colSpan="6" className="px-6 py-10 text-center text-sm text-slate-500">
-                    No tasks match “{search}”.
+                    No tasks match &ldquo;{search}&rdquo;.
                   </td>
                 </tr>
               )}
@@ -455,126 +449,222 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
 }
 
 export default function App() {
-  const [initialWorkspace] = useState(() => {
-    const storedTasks = loadTasks()
-    const storedProjects = loadProjects()
-    const projects = storedProjects ?? createProjectsFromTasks(storedTasks)
-    return {
-      tasks: linkTasksToProjects(storedTasks, projects),
-      projects,
-    }
-  })
-  const [tasks, setTasks] = useState(initialWorkspace.tasks)
-  const [projects, setProjects] = useState(initialWorkspace.projects)
+  const [tasks, setTasks] = useState([])
+  const [projects, setProjects] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
+  const [apiError, setApiError] = useState(null)   // error singkat untuk operasi CUD
   const [activePage, setActivePage] = useState('Dashboard')
   const [taskEditor, setTaskEditor] = useState(null)
   const [taskToDelete, setTaskToDelete] = useState(null)
 
+  // ── Muat data awal dari API ──────────────────────────────────────────────────
   useEffect(() => {
-    saveTasks(tasks)
-  }, [tasks])
+    let cancelled = false
 
-  useEffect(() => {
-    saveProjects(projects)
-  }, [projects])
+    Promise.all([fetchTasks(), fetchProjects()])
+      .then(([taskList, projectList]) => {
+        if (cancelled) return
+        setTasks(taskList)
+        setProjects(projectList)
+        setLoading(false)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setLoadError(err.message || 'Gagal memuat data dari server.')
+        setLoading(false)
+      })
 
-  function createProject(values) {
-    setProjects((current) => [
-      {
-        ...values,
-        id: createProjectId(current),
-        createdAt: new Date().toISOString(),
-      },
-      ...current,
-    ])
+    return () => { cancelled = true }
+  }, [])
+
+  // Tampilkan error API singkat selama 4 detik, lalu hilang otomatis
+  function showApiError(msg) {
+    setApiError(msg)
+    setTimeout(() => setApiError(null), 4000)
   }
 
-  function updateProject(projectId, values) {
-    setProjects((current) => current.map((project) =>
-      project.id === projectId ? { ...project, ...values } : project,
-    ))
-    setTasks((current) => current.map((task) =>
-      task.projectId === projectId ? { ...task, project: values.name } : task,
-    ))
+  // ── Projects ─────────────────────────────────────────────────────────────────
+  async function handleCreateProject(values) {
+    try {
+      const created = await apiCreateProject(values)
+      setProjects((current) => [created, ...current])
+    } catch (err) {
+      showApiError(`Gagal membuat project: ${err.message}`)
+    }
   }
 
-  function deleteProject(projectId) {
-    const project = projects.find((item) => item.id === projectId)
-    if (!project) return
-
-    setProjects((current) => current.filter((item) => item.id !== projectId))
-    setTasks((current) => current.map((task) => (
-      task.projectId === projectId ||
-      (!task.projectId && task.project.toLocaleLowerCase() === project.name.toLocaleLowerCase())
-        ? { ...task, projectId: '', project: '' }
-        : task
-    )))
+  async function handleUpdateProject(projectId, values) {
+    try {
+      const updated = await apiUpdateProject(projectId, values)
+      setProjects((current) =>
+        current.map((p) => (p.id === projectId ? updated : p)),
+      )
+      // Perbarui nama project pada task yang terkait (dari response server)
+      if (updated.name) {
+        setTasks((current) =>
+          current.map((task) =>
+            task.projectId === projectId ? { ...task, project: updated.name } : task,
+          ),
+        )
+      }
+    } catch (err) {
+      showApiError(`Gagal mengupdate project: ${err.message}`)
+    }
   }
 
-  function updateTaskStatus(taskId, status) {
-    setTasks((current) => current.map((task) =>
-      task.id === taskId ? { ...task, status } : task,
-    ))
-  }
-
-  function saveTask(values) {
-    const title = values.title?.trim() ?? ''
-    if (!title) return
-
-    const matchedProject = projects.find((item) => item.id === values.projectId)
-    const projectId = matchedProject?.id ?? ''
-    const project = matchedProject?.name ?? ''
-
-    if (taskEditor?.mode === 'edit' && taskEditor?.task) {
+  async function handleDeleteProject(projectId) {
+    try {
+      await apiDeleteProject(projectId)
+      setProjects((current) => current.filter((p) => p.id !== projectId))
+      // Task terkait: kosongkan projectId & project (sesuai FK SET NULL di DB)
       setTasks((current) =>
         current.map((task) =>
-          task.id === taskEditor.task.id
-            ? {
-                ...task,
-                ...values,
-                title,
-                projectId,
-                project,
-                id: task.id,
-                category: task.category ?? 'Task',
-              }
+          task.projectId === projectId
+            ? { ...task, projectId: '', project: '' }
             : task,
         ),
       )
+    } catch (err) {
+      showApiError(`Gagal menghapus project: ${err.message}`)
+    }
+  }
+
+  // ── Tasks ────────────────────────────────────────────────────────────────────
+
+  /**
+   * Update status task — optimistic update.
+   * Jika API gagal, kembalikan ke status sebelumnya dan tampilkan error.
+   */
+  const handleUpdateTaskStatus = useCallback(async (taskId, newStatus) => {
+    // Ambil status awal task secara sinkron sebelum optimistic update
+    const prevStatus = tasks.find((task) => task.id === taskId)?.status
+    setTasks((current) =>
+      current.map((task) =>
+        task.id === taskId ? { ...task, status: newStatus } : task,
+      ),
+    )
+    try {
+      const updated = await updateTask(taskId, { status: newStatus })
+      // Sinkronkan dengan response server (memastikan JOIN project name tetap benar)
+      setTasks((current) =>
+        current.map((task) => (task.id === taskId ? updated : task)),
+      )
+    } catch (err) {
+      // Rollback hanya untuk task yang gagal, tanpa menimpa perubahan task lain
+      if (prevStatus !== undefined) {
+        setTasks((current) =>
+          current.map((task) =>
+            task.id === taskId ? { ...task, status: prevStatus } : task,
+          ),
+        )
+      }
+      showApiError(`Gagal mengubah status: ${err.message}`)
+    }
+  }, [tasks])
+
+  async function saveTask(values) {
+    const title = values.title?.trim() ?? ''
+    if (!title) return
+
+    if (taskEditor?.mode === 'edit' && taskEditor?.task) {
+      // ── Edit task ──
+      const taskId = taskEditor.task.id
+      try {
+        const updated = await updateTask(taskId, {
+          title,
+          projectId: values.projectId ?? '',
+          priority:  values.priority,
+          status:    values.status,
+          dueDate:   values.dueDate ?? '',
+          description: values.description ?? '',
+        })
+        // Response server sudah mengandung "project" dari JOIN
+        setTasks((current) =>
+          current.map((task) => (task.id === taskId ? updated : task)),
+        )
+      } catch (err) {
+        showApiError(`Gagal menyimpan task: ${err.message}`)
+        return
+      }
     } else {
-      setTasks((current) => {
-        const nextId = current.reduce((maxId, task) => Math.max(maxId, task.id), 0) + 1
-        return [
-          {
-            ...values,
-            id: nextId,
-            title,
-            projectId,
-            project,
-            category: 'Task',
-          },
-          ...current,
-        ]
-      })
+      // ── Tambah task baru ──
+      try {
+        const created = await createTask({
+          title,
+          projectId:   values.projectId ?? '',
+          category:    'Task',
+          priority:    values.priority ?? 'Medium',
+          status:      values.status ?? 'To Do',
+          dueDate:     values.dueDate ?? '',
+          description: values.description ?? '',
+        })
+        // id berasal dari AUTO_INCREMENT backend (bukan dihitung frontend)
+        setTasks((current) => [created, ...current])
+      } catch (err) {
+        showApiError(`Gagal membuat task: ${err.message}`)
+        return
+      }
     }
     setTaskEditor(null)
   }
 
-  function confirmDeleteTask() {
+  async function confirmDeleteTask() {
     if (!taskToDelete) return
-    setTasks((current) => current.filter((task) => task.id !== taskToDelete.id))
-    setTaskToDelete(null)
+    const taskId = taskToDelete.id
+    try {
+      await apiDeleteTask(taskId)
+      setTasks((current) => current.filter((task) => task.id !== taskId))
+      setTaskToDelete(null)
+    } catch (err) {
+      showApiError(`Gagal menghapus task: ${err.message}`)
+      setTaskToDelete(null)
+    }
   }
 
   function openTaskEditor(mode, task = null) {
     setTaskEditor({ mode, task })
   }
 
+  // ── Loading / Error screen ───────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F5F6FA]">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-violet-200 border-t-violet-600" />
+          <p className="text-sm text-slate-500">Memuat data dari server…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F5F6FA] p-6">
+        <div className="w-full max-w-sm rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-sm">
+          <AlertCircle size={40} className="mx-auto mb-4 text-rose-500" />
+          <h2 className="mb-2 text-lg font-semibold text-slate-800">
+            Server tidak dapat dihubungi
+          </h2>
+          <p className="mb-6 text-sm text-slate-500">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-violet-700"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Normal render ────────────────────────────────────────────────────────────
   const pageContent = {
     Dashboard: (
       <Dashboard
         tasks={tasks}
-        setTasks={setTasks}
+        onUpdateTaskStatus={handleUpdateTaskStatus}
         onAddTask={() => openTaskEditor('add')}
         onEditTask={(task) => openTaskEditor('edit', task)}
         onDeleteTask={setTaskToDelete}
@@ -583,21 +673,26 @@ export default function App() {
     'My Tasks': (
       <MyTasksPage
         tasks={tasks}
-        setTasks={setTasks}
+        onUpdateTaskStatus={handleUpdateTaskStatus}
         onEditTask={(task) => openTaskEditor('edit', task)}
         onDeleteTask={setTaskToDelete}
       />
     ),
-    Kanban: <KanbanPage tasks={tasks} setTasks={setTasks} />,
+    Kanban: (
+      <KanbanPage
+        tasks={tasks}
+        onUpdateTaskStatus={handleUpdateTaskStatus}
+      />
+    ),
     Projects: (
       <ProjectsPage
         projects={projects}
         tasks={tasks}
-        onCreateProject={createProject}
-        onUpdateProject={updateProject}
-        onDeleteProject={deleteProject}
+        onCreateProject={handleCreateProject}
+        onUpdateProject={handleUpdateProject}
+        onDeleteProject={handleDeleteProject}
         onEditTask={(task) => openTaskEditor('edit', task)}
-        onStatusChange={updateTaskStatus}
+        onStatusChange={handleUpdateTaskStatus}
       />
     ),
     Team: <TeamPage />,
@@ -617,6 +712,14 @@ export default function App() {
       <div className="ml-20 lg:ml-64">
         {pageContent}
       </div>
+
+      {/* Pesan error singkat untuk operasi CUD */}
+      {apiError && (
+        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-rose-600 px-5 py-3 text-sm font-medium text-white shadow-lg">
+          {apiError}
+        </div>
+      )}
+
       {taskEditor && (
         <TaskEditorModal
           key={`${taskEditor.mode}-${taskEditor.task?.id ?? 'new'}`}

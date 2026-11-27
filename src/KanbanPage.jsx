@@ -92,7 +92,16 @@ function TaskCard({ task, today, dragged, onStatusChange, onDragStart, onDragEnd
   )
 }
 
-export default function KanbanPage({ tasks, setTasks }) {
+/**
+ * KanbanPage menerima:
+ * - tasks: array task (dari state App.jsx)
+ * - onUpdateTaskStatus(taskId, newStatus): fungsi async dari App.jsx
+ *   yang menangani optimistic update + rollback + API call.
+ *
+ * KanbanPage TIDAK memanggil API secara langsung.
+ * Drag & drop dan quick status change semuanya lewat onUpdateTaskStatus.
+ */
+export default function KanbanPage({ tasks, onUpdateTaskStatus }) {
   const [search, setSearch] = useState('')
   const [projectFilter, setProjectFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
@@ -117,18 +126,6 @@ export default function KanbanPage({ tasks, setTasks }) {
   })
   const hasFilters = Boolean(search || projectFilter || priorityFilter)
 
-  function updateTaskStatus(taskId, status) {
-    setTasks((current) => {
-      let changed = false
-      const next = current.map((task) => {
-        if (task.id !== taskId || task.status === status) return task
-        changed = true
-        return { ...task, status }
-      })
-      return changed ? next : current
-    })
-  }
-
   function handleDragStart(event, task) {
     const taskId = String(task.id)
     event.dataTransfer.effectAllowed = 'move'
@@ -138,9 +135,12 @@ export default function KanbanPage({ tasks, setTasks }) {
 
   function handleDrop(event, status) {
     event.preventDefault()
-    const taskId = event.dataTransfer.getData('text/plain')
+    const taskId = event.dataTransfer.getData('text/plain') || draggedTaskId
     const task = tasks.find((item) => String(item.id) === taskId)
-    if (task && task.status !== status) updateTaskStatus(task.id, status)
+    if (task && task.status !== status) {
+      // Optimistic update + API call + rollback ditangani di App.jsx
+      onUpdateTaskStatus(task.id, status)
+    }
     setDraggedTaskId(null)
     setDragOverStatus(null)
   }
@@ -256,7 +256,7 @@ export default function KanbanPage({ tasks, setTasks }) {
                       task={task}
                       today={today}
                       dragged={draggedTaskId === String(task.id)}
-                      onStatusChange={updateTaskStatus}
+                      onStatusChange={onUpdateTaskStatus}
                       onDragStart={handleDragStart}
                       onDragEnd={() => {
                         setDraggedTaskId(null)
