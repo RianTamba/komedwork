@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import {
   CircleCheck,
-  FolderKanban,
+  Pencil,
+  RotateCcw,
   Search,
+  Trash2,
   Users,
 } from 'lucide-react'
-import { formatDueDate, statuses, statusColors } from './taskData.js'
+import { formatDueDate, priorities, statuses, statusColors } from './taskData.js'
+export { ProjectsPage } from './ProjectPages.jsx'
+
+const priorityWeight = { Low: 1, Medium: 2, High: 3, Urgent: 4 }
 
 function PageHeader({ title, description }) {
   return (
@@ -17,10 +22,18 @@ function PageHeader({ title, description }) {
   )
 }
 
-function TaskTable({ tasks, onStatusChange, emptyMessage }) {
+function TaskTable({
+  tasks,
+  onStatusChange,
+  onEditTask,
+  onDeleteTask,
+  emptyMessage,
+}) {
+  const hasActions = onEditTask || onDeleteTask
+
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[700px] text-left">
+      <table className="w-full min-w-[850px] text-left">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
           <tr>
             <th className="px-6 py-4 font-medium">Task</th>
@@ -28,6 +41,7 @@ function TaskTable({ tasks, onStatusChange, emptyMessage }) {
             <th className="px-6 py-4 font-medium">Priority</th>
             <th className="px-6 py-4 font-medium">Status</th>
             <th className="px-6 py-4 font-medium">Due date</th>
+            {hasActions && <th className="px-6 py-4 font-medium">Actions</th>}
           </tr>
         </thead>
         <tbody>
@@ -78,10 +92,38 @@ function TaskTable({ tasks, onStatusChange, emptyMessage }) {
               <td className="px-6 py-4 text-sm text-slate-500">
                 {formatDueDate(task.dueDate)}
               </td>
+              {hasActions && (
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-1">
+                    {onEditTask && (
+                      <button
+                        type="button"
+                        onClick={() => onEditTask(task)}
+                        aria-label={`Edit ${task.title}`}
+                        title="Edit task"
+                        className="rounded-lg p-2 text-slate-500 hover:bg-violet-50 hover:text-violet-700"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                    {onDeleteTask && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteTask(task)}
+                        aria-label={`Delete ${task.title}`}
+                        title="Delete task"
+                        className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              )}
             </tr>
           )) : (
             <tr>
-              <td colSpan="5" className="px-6 py-10 text-center text-sm text-slate-500">
+              <td colSpan={hasActions ? 6 : 5} className="px-6 py-10 text-center text-sm text-slate-500">
                 {emptyMessage}
               </td>
             </tr>
@@ -98,17 +140,86 @@ function updateTaskStatus(setTasks, taskId, status) {
   )
 }
 
-export function MyTasksPage({ tasks, setTasks }) {
+function getLocalToday() {
+  const date = new Date()
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
+  return date.toISOString().slice(0, 10)
+}
+
+export function MyTasksPage({ tasks, setTasks, onEditTask, onDeleteTask }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
+  const [priorityFilter, setPriorityFilter] = useState('All priorities')
+  const [projectFilter, setProjectFilter] = useState('All projects')
+  const [deadlineFilter, setDeadlineFilter] = useState('All deadlines')
+  const [dueFrom, setDueFrom] = useState('')
+  const [dueThrough, setDueThrough] = useState('')
+  const [sortBy, setSortBy] = useState('deadline-asc')
+  const [today] = useState(getLocalToday)
   const query = search.trim().toLowerCase()
+  const projects = [...new Set(tasks.map((task) => task.project.trim()).filter(Boolean))]
+    .sort((first, second) => first.localeCompare(second))
+  const isDateRangeInvalid = dueFrom && dueThrough && dueFrom > dueThrough
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch =
       task.title.toLowerCase().includes(query) ||
       task.project.toLowerCase().includes(query)
     const matchesStatus = statusFilter === 'All statuses' || task.status === statusFilter
-    return matchesSearch && matchesStatus
+    const matchesPriority =
+      priorityFilter === 'All priorities' || task.priority === priorityFilter
+    const matchesProject =
+      projectFilter === 'All projects' ||
+      (task.project.trim() || 'No project') === projectFilter
+    const matchesDeadlineType =
+      deadlineFilter === 'All deadlines' ||
+      (deadlineFilter === 'Has deadline' && Boolean(task.dueDate)) ||
+      (deadlineFilter === 'No deadline' && !task.dueDate) ||
+      (deadlineFilter === 'Overdue' &&
+        Boolean(task.dueDate) &&
+        task.dueDate < today &&
+        task.status !== 'Completed')
+    const matchesDateRange =
+      (!dueFrom || (task.dueDate && task.dueDate >= dueFrom)) &&
+      (!dueThrough || (task.dueDate && task.dueDate <= dueThrough))
+
+    return (
+      matchesSearch &&
+      matchesStatus &&
+      matchesPriority &&
+      matchesProject &&
+      matchesDeadlineType &&
+      matchesDateRange &&
+      !isDateRangeInvalid
+    )
   })
+  const sortedTasks = [...filteredTasks].sort((first, second) => {
+    if (sortBy === 'deadline-asc' || sortBy === 'deadline-desc') {
+      if (!first.dueDate) return second.dueDate ? 1 : 0
+      if (!second.dueDate) return -1
+      return sortBy === 'deadline-asc'
+        ? first.dueDate.localeCompare(second.dueDate)
+        : second.dueDate.localeCompare(first.dueDate)
+    }
+
+    if (sortBy === 'priority-desc') {
+      return priorityWeight[second.priority] - priorityWeight[first.priority]
+    }
+    if (sortBy === 'priority-asc') {
+      return priorityWeight[first.priority] - priorityWeight[second.priority]
+    }
+    return second.id - first.id
+  })
+
+  function resetFilters() {
+    setSearch('')
+    setStatusFilter('All statuses')
+    setPriorityFilter('All priorities')
+    setProjectFilter('All projects')
+    setDeadlineFilter('All deadlines')
+    setDueFrom('')
+    setDueThrough('')
+    setSortBy('deadline-asc')
+  }
 
   return (
     <main className="min-h-screen bg-[#F5F6FA] p-5 sm:p-8">
@@ -118,14 +229,14 @@ export function MyTasksPage({ tasks, setTasks }) {
       />
 
       <section className="rounded-2xl border border-slate-200 bg-white">
-        <div className="flex flex-col gap-4 border-b border-slate-100 p-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-800">All tasks</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              Showing {filteredTasks.length} of {tasks.length} tasks
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+        <div className="space-y-4 border-b border-slate-100 p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-800">All tasks</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Showing {sortedTasks.length} of {tasks.length} tasks
+              </p>
+            </div>
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-500 focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-100">
               <Search size={15} />
               <input
@@ -134,119 +245,106 @@ export function MyTasksPage({ tasks, setTasks }) {
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search tasks..."
                 aria-label="Search tasks by task name or project"
-                className="w-36 bg-transparent outline-none placeholder:text-slate-400 sm:w-44"
+                className="w-full bg-transparent outline-none placeholder:text-slate-400 sm:w-44"
               />
             </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
               aria-label="Filter tasks by status"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
             >
               <option>All statuses</option>
               {statuses.map((status) => <option key={status}>{status}</option>)}
             </select>
+            <select
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value)}
+              aria-label="Filter tasks by priority"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            >
+              <option>All priorities</option>
+              {priorities.map((priority) => <option key={priority}>{priority}</option>)}
+            </select>
+            <select
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+              aria-label="Filter tasks by project"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            >
+              <option>All projects</option>
+              {tasks.some((task) => !task.project.trim()) && <option>No project</option>}
+              {projects.map((project) => <option key={project}>{project}</option>)}
+            </select>
+            <select
+              value={deadlineFilter}
+              onChange={(event) => setDeadlineFilter(event.target.value)}
+              aria-label="Filter tasks by deadline"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            >
+              <option>All deadlines</option>
+              <option>Has deadline</option>
+              <option>No deadline</option>
+              <option>Overdue</option>
+            </select>
+            <label className="text-xs text-slate-500">
+              Due from
+              <input
+                type="date"
+                value={dueFrom}
+                onChange={(event) => setDueFrom(event.target.value)}
+                aria-label="Deadline from"
+                className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+            </label>
+            <label className="text-xs text-slate-500">
+              Due through
+              <input
+                type="date"
+                value={dueThrough}
+                onChange={(event) => setDueThrough(event.target.value)}
+                aria-label="Deadline through"
+                className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+            </label>
+            <select
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+              aria-label="Sort tasks"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-600 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            >
+              <option value="deadline-asc">Deadline terdekat</option>
+              <option value="deadline-desc">Deadline terjauh</option>
+              <option value="priority-desc">Prioritas tertinggi</option>
+              <option value="priority-asc">Prioritas terendah</option>
+              <option value="newest">Task terbaru</option>
+            </select>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <RotateCcw size={15} />
+              Reset filters
+            </button>
           </div>
+          {isDateRangeInvalid && (
+            <p role="alert" className="text-sm text-rose-600">
+              The start date must be on or before the end date.
+            </p>
+          )}
         </div>
         <TaskTable
-          tasks={filteredTasks}
+          tasks={sortedTasks}
           onStatusChange={(taskId, status) => updateTaskStatus(setTasks, taskId, status)}
-          emptyMessage="No tasks match your search or status filter."
+          onEditTask={onEditTask}
+          onDeleteTask={onDeleteTask}
+          emptyMessage="No tasks match your current search and filters."
         />
       </section>
-    </main>
-  )
-}
-
-export function ProjectsPage({ tasks }) {
-  const projectNames = [...new Set(tasks.map((task) => task.project.trim() || 'No project'))]
-
-  return (
-    <main className="min-h-screen bg-[#F5F6FA] p-5 sm:p-8">
-      <PageHeader
-        title="Projects"
-        description="Project summaries are generated from tasks in your workspace."
-      />
-
-      {projectNames.length ? (
-        <section className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-          {projectNames.map((projectName) => {
-            const projectTasks = tasks.filter(
-              (task) => (task.project.trim() || 'No project') === projectName,
-            )
-            const completedCount = projectTasks.filter(
-              (task) => task.status === 'Completed',
-            ).length
-            const progress = Math.round((completedCount / projectTasks.length) * 100)
-
-            return (
-              <article
-                key={projectName}
-                className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="rounded-xl bg-violet-50 p-2.5 text-violet-600">
-                      <FolderKanban size={20} />
-                    </div>
-                    <h3 className="truncate font-semibold text-slate-800">{projectName}</h3>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                    {projectTasks.length} {projectTasks.length === 1 ? 'task' : 'tasks'}
-                  </span>
-                </div>
-
-                <div className="mt-6 flex items-end justify-between text-sm">
-                  <span className="text-slate-500">Completed</span>
-                  <span className="font-medium text-slate-700">
-                    {completedCount} / {projectTasks.length}
-                  </span>
-                </div>
-                <div
-                  role="progressbar"
-                  aria-label={`${projectName} completion`}
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  aria-valuenow={progress}
-                  className="mt-2 h-2 overflow-hidden rounded-full bg-violet-100"
-                >
-                  <div
-                    className="h-full rounded-full bg-violet-600 transition-all"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-right text-xs text-slate-500">{progress}% complete</p>
-
-                <div className="mt-5 border-t border-slate-100 pt-4">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Related tasks
-                  </p>
-                  <ul className="space-y-2">
-                    {projectTasks.slice(0, 3).map((task) => (
-                      <li key={task.id} className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm text-slate-700">{task.title}</span>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${statusColors[task.status]}`}>
-                          {task.status}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  {projectTasks.length > 3 && (
-                    <p className="mt-3 text-xs text-slate-400">
-                      And {projectTasks.length - 3} more
-                    </p>
-                  )}
-                </div>
-              </article>
-            )
-          })}
-        </section>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-          <FolderKanban className="mx-auto text-slate-300" size={32} />
-          <p className="mt-3 text-sm text-slate-500">Projects will appear when tasks are added.</p>
-        </div>
-      )}
     </main>
   )
 }
@@ -277,7 +375,7 @@ export function TeamPage() {
   )
 }
 
-export function HistoryPage({ tasks }) {
+export function HistoryPage({ tasks, onEditTask, onDeleteTask }) {
   const completedTasks = tasks.filter((task) => task.status === 'Completed')
 
   return (
@@ -305,6 +403,8 @@ export function HistoryPage({ tasks }) {
         </div>
         <TaskTable
           tasks={completedTasks}
+          onEditTask={onEditTask}
+          onDeleteTask={onDeleteTask}
           emptyMessage="Completed tasks will appear here."
         />
       </section>
