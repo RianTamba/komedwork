@@ -15,7 +15,7 @@ import {
   CircleCheck,
   Clock3,
   AlertCircle,
-  MoreHorizontal,
+  Pencil,
   ArrowUpRight,
   BriefcaseBusiness,
   X,
@@ -27,6 +27,7 @@ import {
   SettingsPage,
   TeamPage,
 } from './WorkspacePages.jsx'
+import TaskDialog from './TaskDialog.jsx'
 import {
   formatDueDate,
   loadTasks,
@@ -35,6 +36,13 @@ import {
   statuses,
   statusColors,
 } from './taskData.js'
+import {
+  createProjectId,
+  createProjectsFromTasks,
+  linkTasksToProjects,
+  loadProjects,
+  saveProjects,
+} from './projectData.js'
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard },
@@ -142,7 +150,7 @@ function StatCard({ title, value, subtitle, icon: Icon, iconColor, iconBg }) {
   )
 }
 
-function Dashboard({ tasks, setTasks }) {
+function Dashboard({ tasks, setTasks, projects, onEditTask }) {
   const [search, setSearch] = useState('')
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false)
   const [formError, setFormError] = useState('')
@@ -217,6 +225,7 @@ function Dashboard({ tasks, setTasks }) {
           id: nextId,
           title,
           project: formValues.project.trim(),
+          projectId: projects.find((project) => project.name === formValues.project.trim())?.id ?? '',
           category: 'Task',
         },
         ...current,
@@ -462,10 +471,11 @@ function Dashboard({ tasks, setTasks }) {
                     <td className="px-6 py-4 text-slate-400">
                       <button
                         type="button"
-                        aria-label={`More options for ${task.title}`}
+                        onClick={() => onEditTask(task)}
+                        aria-label={`Edit ${task.title}`}
                         className="rounded-lg p-1 hover:bg-slate-100"
                       >
-                        <MoreHorizontal size={18} />
+                        <Pencil size={16} />
                       </button>
                     </td>
                   </tr>
@@ -542,15 +552,18 @@ function Dashboard({ tasks, setTasks }) {
                 <label htmlFor="task-project" className="mb-1.5 block text-sm font-medium text-slate-700">
                   Project
                 </label>
-                <input
+                <select
                   id="task-project"
                   name="project"
                   value={formValues.project}
                   onChange={updateFormValue}
-                  maxLength={100}
-                  placeholder="Project name"
                   className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                />
+                >
+                  <option value="">No project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.name}>{project.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -644,17 +657,102 @@ function Dashboard({ tasks, setTasks }) {
 }
 
 export default function App() {
-  const [tasks, setTasks] = useState(loadTasks)
+  const [initialWorkspace] = useState(() => {
+    const storedTasks = loadTasks()
+    const storedProjects = loadProjects()
+    const projects = storedProjects ?? createProjectsFromTasks(storedTasks)
+    return {
+      tasks: linkTasksToProjects(storedTasks, projects),
+      projects,
+    }
+  })
+  const [tasks, setTasks] = useState(initialWorkspace.tasks)
+  const [projects, setProjects] = useState(initialWorkspace.projects)
   const [activePage, setActivePage] = useState('Dashboard')
+  const [taskToEdit, setTaskToEdit] = useState(null)
 
   useEffect(() => {
     saveTasks(tasks)
   }, [tasks])
 
+  useEffect(() => {
+    saveProjects(projects)
+  }, [projects])
+
+  function createProject(values) {
+    setProjects((current) => [
+      {
+        ...values,
+        id: createProjectId(current),
+        createdAt: new Date().toISOString(),
+      },
+      ...current,
+    ])
+  }
+
+  function updateProject(projectId, values) {
+    setProjects((current) => current.map((project) =>
+      project.id === projectId ? { ...project, ...values } : project,
+    ))
+    setTasks((current) => current.map((task) =>
+      task.projectId === projectId ? { ...task, project: values.name } : task,
+    ))
+  }
+
+  function deleteProject(projectId) {
+    const project = projects.find((item) => item.id === projectId)
+    if (!project) return
+
+    setProjects((current) => current.filter((item) => item.id !== projectId))
+    setTasks((current) => current.map((task) => (
+      task.projectId === projectId ||
+      (!task.projectId && task.project.toLocaleLowerCase() === project.name.toLocaleLowerCase())
+        ? { ...task, projectId: '', project: '' }
+        : task
+    )))
+  }
+
+  function updateTaskStatus(taskId, status) {
+    setTasks((current) => current.map((task) =>
+      task.id === taskId ? { ...task, status } : task,
+    ))
+  }
+
+  function saveTaskChanges(values) {
+    if (!taskToEdit) return
+    setTasks((current) => current.map((task) =>
+      task.id === taskToEdit.id ? { ...task, ...values } : task,
+    ))
+    setTaskToEdit(null)
+  }
+
   const pageContent = {
-    Dashboard: <Dashboard tasks={tasks} setTasks={setTasks} />,
-    'My Tasks': <MyTasksPage tasks={tasks} setTasks={setTasks} />,
-    Projects: <ProjectsPage tasks={tasks} />,
+    Dashboard: (
+      <Dashboard
+        tasks={tasks}
+        setTasks={setTasks}
+        projects={projects}
+        onEditTask={setTaskToEdit}
+      />
+    ),
+    'My Tasks': (
+      <MyTasksPage
+        tasks={tasks}
+        setTasks={setTasks}
+        onEditTask={setTaskToEdit}
+      />
+    ),
+    Projects: (
+      <ProjectsPage
+        projects={projects}
+        tasks={tasks}
+        onCreateProject={createProject}
+        onUpdateProject={updateProject}
+        onDeleteProject={deleteProject}
+        onEditTask={setTaskToEdit}
+        onStatusChange={updateTaskStatus}
+      />
+    ),
     Team: <TeamPage />,
     History: <HistoryPage tasks={tasks} />,
     Settings: <SettingsPage />,
@@ -666,6 +764,15 @@ export default function App() {
       <div className="ml-20 lg:ml-64">
         {pageContent}
       </div>
+      {taskToEdit && (
+        <TaskDialog
+          key={taskToEdit.id}
+          task={taskToEdit}
+          projects={projects}
+          onClose={() => setTaskToEdit(null)}
+          onSubmit={saveTaskChanges}
+        />
+      )}
     </div>
   )
 }

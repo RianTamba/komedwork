@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import {
   CircleCheck,
-  FolderKanban,
+  Pencil,
   Search,
   Users,
 } from 'lucide-react'
 import { formatDueDate, statuses, statusColors } from './taskData.js'
+export { ProjectsPage } from './ProjectPages.jsx'
 
 function PageHeader({ title, description }) {
   return (
@@ -17,7 +18,7 @@ function PageHeader({ title, description }) {
   )
 }
 
-function TaskTable({ tasks, onStatusChange, emptyMessage }) {
+function TaskTable({ tasks, onStatusChange, onEditTask, emptyMessage }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[700px] text-left">
@@ -28,6 +29,7 @@ function TaskTable({ tasks, onStatusChange, emptyMessage }) {
             <th className="px-6 py-4 font-medium">Priority</th>
             <th className="px-6 py-4 font-medium">Status</th>
             <th className="px-6 py-4 font-medium">Due date</th>
+            {onEditTask && <th className="px-6 py-4 font-medium">Action</th>}
           </tr>
         </thead>
         <tbody>
@@ -78,10 +80,22 @@ function TaskTable({ tasks, onStatusChange, emptyMessage }) {
               <td className="px-6 py-4 text-sm text-slate-500">
                 {formatDueDate(task.dueDate)}
               </td>
+              {onEditTask && (
+                <td className="px-6 py-4">
+                  <button
+                    type="button"
+                    onClick={() => onEditTask(task)}
+                    aria-label={`Edit ${task.title}`}
+                    className="rounded-lg p-2 text-slate-500 hover:bg-violet-50 hover:text-violet-700"
+                  >
+                    <Pencil size={16} />
+                  </button>
+                </td>
+              )}
             </tr>
           )) : (
             <tr>
-              <td colSpan="5" className="px-6 py-10 text-center text-sm text-slate-500">
+              <td colSpan={onEditTask ? 6 : 5} className="px-6 py-10 text-center text-sm text-slate-500">
                 {emptyMessage}
               </td>
             </tr>
@@ -98,7 +112,7 @@ function updateTaskStatus(setTasks, taskId, status) {
   )
 }
 
-export function MyTasksPage({ tasks, setTasks }) {
+export function MyTasksPage({ tasks, setTasks, onEditTask }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
   const query = search.trim().toLowerCase()
@@ -151,102 +165,10 @@ export function MyTasksPage({ tasks, setTasks }) {
         <TaskTable
           tasks={filteredTasks}
           onStatusChange={(taskId, status) => updateTaskStatus(setTasks, taskId, status)}
+          onEditTask={onEditTask}
           emptyMessage="No tasks match your search or status filter."
         />
       </section>
-    </main>
-  )
-}
-
-export function ProjectsPage({ tasks }) {
-  const projectNames = [...new Set(tasks.map((task) => task.project.trim() || 'No project'))]
-
-  return (
-    <main className="min-h-screen bg-[#F5F6FA] p-5 sm:p-8">
-      <PageHeader
-        title="Projects"
-        description="Project summaries are generated from tasks in your workspace."
-      />
-
-      {projectNames.length ? (
-        <section className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-          {projectNames.map((projectName) => {
-            const projectTasks = tasks.filter(
-              (task) => (task.project.trim() || 'No project') === projectName,
-            )
-            const completedCount = projectTasks.filter(
-              (task) => task.status === 'Completed',
-            ).length
-            const progress = Math.round((completedCount / projectTasks.length) * 100)
-
-            return (
-              <article
-                key={projectName}
-                className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="rounded-xl bg-violet-50 p-2.5 text-violet-600">
-                      <FolderKanban size={20} />
-                    </div>
-                    <h3 className="truncate font-semibold text-slate-800">{projectName}</h3>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                    {projectTasks.length} {projectTasks.length === 1 ? 'task' : 'tasks'}
-                  </span>
-                </div>
-
-                <div className="mt-6 flex items-end justify-between text-sm">
-                  <span className="text-slate-500">Completed</span>
-                  <span className="font-medium text-slate-700">
-                    {completedCount} / {projectTasks.length}
-                  </span>
-                </div>
-                <div
-                  role="progressbar"
-                  aria-label={`${projectName} completion`}
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  aria-valuenow={progress}
-                  className="mt-2 h-2 overflow-hidden rounded-full bg-violet-100"
-                >
-                  <div
-                    className="h-full rounded-full bg-violet-600 transition-all"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-right text-xs text-slate-500">{progress}% complete</p>
-
-                <div className="mt-5 border-t border-slate-100 pt-4">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Related tasks
-                  </p>
-                  <ul className="space-y-2">
-                    {projectTasks.slice(0, 3).map((task) => (
-                      <li key={task.id} className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm text-slate-700">{task.title}</span>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-medium ${statusColors[task.status]}`}>
-                          {task.status}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  {projectTasks.length > 3 && (
-                    <p className="mt-3 text-xs text-slate-400">
-                      And {projectTasks.length - 3} more
-                    </p>
-                  )}
-                </div>
-              </article>
-            )
-          })}
-        </section>
-      ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
-          <FolderKanban className="mx-auto text-slate-300" size={32} />
-          <p className="mt-3 text-sm text-slate-500">Projects will appear when tasks are added.</p>
-        </div>
-      )}
     </main>
   )
 }
