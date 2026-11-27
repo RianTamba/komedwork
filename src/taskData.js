@@ -41,15 +41,25 @@ export const initialTasks = [
   },
 ]
 
-export const statuses = ['To Do', 'In Progress', 'In Review', 'Completed']
+export const statuses = ['To Do', 'In Progress', 'Review', 'Completed']
 export const priorities = ['Low', 'Medium', 'High', 'Urgent']
 export const tasksStorageKey = 'komedwork_tasks'
 
 export const statusColors = {
   'To Do': 'bg-blue-100 text-blue-700',
   'In Progress': 'bg-orange-100 text-orange-700',
-  'In Review': 'bg-purple-100 text-purple-700',
+  Review: 'bg-purple-100 text-purple-700',
   Completed: 'bg-green-100 text-green-700',
+}
+
+const legacyStatuses = ['In Review']
+
+function normalizeLegacyStatus(task) {
+  return task.status === 'In Review' ? { ...task, status: 'Review' } : task
+}
+
+function getInitialTasks() {
+  return initialTasks.map((task) => normalizeLegacyStatus({ ...task }))
 }
 
 export function formatDueDate(date) {
@@ -85,7 +95,7 @@ function isValidTaskList(value) {
       typeof task.project !== 'string' ||
       typeof task.category !== 'string' ||
       !priorities.includes(task.priority) ||
-      !statuses.includes(task.status) ||
+      !(statuses.includes(task.status) || legacyStatuses.includes(task.status)) ||
       !isValidDueDate(task.dueDate) ||
       typeof task.description !== 'string'
     ) {
@@ -104,11 +114,11 @@ export function loadTasks() {
     serializedTasks = window.localStorage.getItem(tasksStorageKey)
   } catch (error) {
     console.error('Unable to read Komedwork tasks from localStorage.', error)
-    return initialTasks.map((task) => ({ ...task }))
+    return getInitialTasks()
   }
 
   if (serializedTasks === null) {
-    return initialTasks.map((task) => ({ ...task }))
+    return getInitialTasks()
   }
 
   let storedTasks
@@ -116,15 +126,15 @@ export function loadTasks() {
     storedTasks = JSON.parse(serializedTasks)
   } catch (error) {
     console.warn('Stored Komedwork tasks are not valid JSON; using initial tasks.', error)
-    return initialTasks.map((task) => ({ ...task }))
+    return getInitialTasks()
   }
 
   if (!isValidTaskList(storedTasks)) {
     console.warn('Stored Komedwork tasks have an invalid format; using initial tasks.')
-    return initialTasks.map((task) => ({ ...task }))
+    return getInitialTasks()
   }
 
-  return storedTasks
+  return storedTasks.map(normalizeLegacyStatus)
 }
 
 export function saveTasks(tasks) {

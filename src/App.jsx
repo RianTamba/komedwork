@@ -8,6 +8,7 @@ import {
   History,
   Settings,
   Search,
+  Columns3,
   Bell,
   Plus,
   ChevronDown,
@@ -27,6 +28,7 @@ import {
   SettingsPage,
   TeamPage,
 } from './WorkspacePages.jsx'
+import KanbanPage from './KanbanPage.jsx'
 import {
   formatDueDate,
   loadTasks,
@@ -39,6 +41,7 @@ import {
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard },
   { name: 'My Tasks', icon: ListTodo },
+  { name: 'Kanban', icon: Columns3 },
   { name: 'Projects', icon: FolderKanban },
   { name: 'Team', icon: Users },
   { name: 'History', icon: History },
@@ -163,7 +166,7 @@ function Dashboard({ tasks, setTasks }) {
   const completedTasks = tasks.filter((task) => task.status === 'Completed').length
   const inProgressTasks = tasks.filter((task) => task.status === 'In Progress').length
   const toDoTasks = tasks.filter((task) => task.status === 'To Do').length
-  const inReviewTasks = tasks.filter((task) => task.status === 'In Review').length
+  const reviewTasks = tasks.filter((task) => task.status === 'Review').length
   const overdueTasks = tasks.filter(
     (task) => task.dueDate && task.dueDate < today && task.status !== 'Completed',
   ).length
@@ -360,8 +363,8 @@ function Dashboard({ tasks, setTasks }) {
               <span className="font-medium text-slate-700">{toDoTasks}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">In Review</span>
-              <span className="font-medium text-slate-700">{inReviewTasks}</span>
+              <span className="text-slate-500">Review</span>
+              <span className="font-medium text-slate-700">{reviewTasks}</span>
             </div>
           </div>
         </div>
@@ -654,6 +657,7 @@ export default function App() {
   const pageContent = {
     Dashboard: <Dashboard tasks={tasks} setTasks={setTasks} />,
     'My Tasks': <MyTasksPage tasks={tasks} setTasks={setTasks} />,
+    Kanban: <KanbanPage tasks={tasks} setTasks={setTasks} />,
     Projects: <ProjectsPage tasks={tasks} />,
     Team: <TeamPage />,
     History: <HistoryPage tasks={tasks} />,
