@@ -15,10 +15,10 @@ import {
   CircleCheck,
   Clock3,
   AlertCircle,
-  Pencil,
   ArrowUpRight,
   BriefcaseBusiness,
-  X,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 import {
   HistoryPage,
@@ -28,6 +28,7 @@ import {
   TeamPage,
 } from './WorkspacePages.jsx'
 import TaskDialog from './TaskDialog.jsx'
+import { DeleteTaskDialog, TaskEditorModal } from './TaskDialogs.jsx'
 import {
   formatDueDate,
   loadTasks,
@@ -150,19 +151,8 @@ function StatCard({ title, value, subtitle, icon: Icon, iconColor, iconBg }) {
   )
 }
 
-function Dashboard({ tasks, setTasks, projects, onEditTask }) {
+function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
   const [search, setSearch] = useState('')
-  const [isAddTaskOpen, setIsAddTaskOpen] = useState(false)
-  const [formError, setFormError] = useState('')
-  const [formValues, setFormValues] = useState({
-    title: '',
-    project: '',
-    priority: 'Medium',
-    status: 'To Do',
-    dueDate: '',
-    description: '',
-  })
-
   const [today] = useState(() => {
     const localToday = new Date()
     localToday.setMinutes(localToday.getMinutes() - localToday.getTimezoneOffset())
@@ -190,58 +180,6 @@ function Dashboard({ tasks, setTasks, projects, onEditTask }) {
       task.project.toLowerCase().includes(query)
     )
   })
-
-  useEffect(() => {
-    if (!isAddTaskOpen) return undefined
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') setIsAddTaskOpen(false)
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isAddTaskOpen])
-
-  function updateFormValue(event) {
-    const { name, value } = event.target
-    setFormValues((current) => ({ ...current, [name]: value }))
-    if (name === 'title' && value.trim()) setFormError('')
-  }
-
-  function handleAddTask(event) {
-    event.preventDefault()
-    const title = formValues.title.trim()
-
-    if (!title) {
-      setFormError('Task title is required.')
-      return
-    }
-
-    setTasks((current) => {
-      const nextId = current.reduce((maxId, task) => Math.max(maxId, task.id), 0) + 1
-      return [
-        {
-          ...formValues,
-          id: nextId,
-          title,
-          project: formValues.project.trim(),
-          projectId: projects.find((project) => project.name === formValues.project.trim())?.id ?? '',
-          category: 'Task',
-        },
-        ...current,
-      ]
-    })
-    setFormValues({
-      title: '',
-      project: '',
-      priority: 'Medium',
-      status: 'To Do',
-      dueDate: '',
-      description: '',
-    })
-    setFormError('')
-    setIsAddTaskOpen(false)
-  }
 
   return (
     <main className="min-h-screen bg-[#F5F6FA] p-8">
@@ -399,7 +337,7 @@ function Dashboard({ tasks, setTasks, projects, onEditTask }) {
             </label>
             <button
               type="button"
-              onClick={() => setIsAddTaskOpen(true)}
+              onClick={onAddTask}
               className="flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
             >
               <Plus size={16} />
@@ -417,7 +355,7 @@ function Dashboard({ tasks, setTasks, projects, onEditTask }) {
                 <th className="px-6 py-4 font-medium">Priority</th>
                 <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium">Deadline</th>
-                <th className="px-6 py-4"></th>
+                <th className="px-6 py-4 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -468,15 +406,27 @@ function Dashboard({ tasks, setTasks, projects, onEditTask }) {
                     <td className="px-6 py-4 text-sm text-slate-500">
                       {formatDueDate(task.dueDate)}
                     </td>
-                    <td className="px-6 py-4 text-slate-400">
-                      <button
-                        type="button"
-                        onClick={() => onEditTask(task)}
-                        aria-label={`Edit ${task.title}`}
-                        className="rounded-lg p-1 hover:bg-slate-100"
-                      >
-                        <Pencil size={16} />
-                      </button>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onEditTask(task)}
+                          aria-label={`Edit ${task.title}`}
+                          title="Edit task"
+                          className="rounded-lg p-2 text-slate-500 hover:bg-violet-50 hover:text-violet-700"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteTask(task)}
+                          aria-label={`Delete ${task.title}`}
+                          title="Delete task"
+                          className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -498,160 +448,6 @@ function Dashboard({ tasks, setTasks, projects, onEditTask }) {
         </div>
       </section>
 
-      {isAddTaskOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setIsAddTaskOpen(false)
-          }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-task-title"
-            className="my-auto w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl"
-          >
-            <div className="mb-5 flex items-start justify-between">
-              <div>
-                <h3 id="add-task-title" className="text-lg font-semibold text-slate-800">
-                  Add a task
-                </h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Add a task to your workspace.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddTaskOpen(false)}
-                aria-label="Close add task form"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddTask} className="space-y-4">
-              <div>
-                <label htmlFor="task-title" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Task title <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  id="task-title"
-                  name="title"
-                  value={formValues.title}
-                  onChange={updateFormValue}
-                  required
-                  maxLength={120}
-                  placeholder="What needs to be done?"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                />
-                {formError && <p className="mt-1 text-sm text-rose-600">{formError}</p>}
-              </div>
-
-              <div>
-                <label htmlFor="task-project" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Project
-                </label>
-                <select
-                  id="task-project"
-                  name="project"
-                  value={formValues.project}
-                  onChange={updateFormValue}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                >
-                  <option value="">No project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.name}>{project.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="task-priority" className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Priority
-                  </label>
-                  <select
-                    id="task-priority"
-                    name="priority"
-                    value={formValues.priority}
-                    onChange={updateFormValue}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                  >
-                    {priorities.map((priority) => (
-                      <option key={priority} value={priority}>{priority}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="task-status" className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Status
-                  </label>
-                  <select
-                    id="task-status"
-                    name="status"
-                    value={formValues.status}
-                    onChange={updateFormValue}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                  >
-                    {statuses.map((status) => (
-                      <option key={status} value={status}>{status}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="task-due-date" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Due date
-                </label>
-                <input
-                  id="task-due-date"
-                  type="date"
-                  name="dueDate"
-                  value={formValues.dueDate}
-                  onChange={updateFormValue}
-                  min={today}
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="task-description" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Description <span className="font-normal text-slate-400">(optional)</span>
-                </label>
-                <textarea
-                  id="task-description"
-                  name="description"
-                  value={formValues.description}
-                  onChange={updateFormValue}
-                  maxLength={500}
-                  rows={3}
-                  placeholder="Add more details about this task"
-                  className="w-full resize-y rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsAddTaskOpen(false)}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-violet-700"
-                >
-                  Add Task
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
     </main>
   )
 }
@@ -669,7 +465,9 @@ export default function App() {
   const [tasks, setTasks] = useState(initialWorkspace.tasks)
   const [projects, setProjects] = useState(initialWorkspace.projects)
   const [activePage, setActivePage] = useState('Dashboard')
+  const [taskEditor, setTaskEditor] = useState(null)
   const [taskToEdit, setTaskToEdit] = useState(null)
+  const [taskToDelete, setTaskToDelete] = useState(null)
 
   useEffect(() => {
     saveTasks(tasks)
@@ -718,6 +516,25 @@ export default function App() {
     ))
   }
 
+  function saveTask(values) {
+    const project = projects.find((item) => item.id === values.projectId)
+    setTasks((current) => {
+      const nextId = current.reduce((maxId, task) => Math.max(maxId, task.id), 0) + 1
+      return [
+        {
+          ...values,
+          id: nextId,
+          title: values.title.trim(),
+          projectId: project?.id ?? '',
+          project: project?.name ?? '',
+          category: 'Task',
+        },
+        ...current,
+      ]
+    })
+    setTaskEditor(null)
+  }
+
   function saveTaskChanges(values) {
     if (!taskToEdit) return
     setTasks((current) => current.map((task) =>
@@ -726,20 +543,33 @@ export default function App() {
     setTaskToEdit(null)
   }
 
+  function confirmDeleteTask() {
+    if (!taskToDelete) return
+    setTasks((current) => current.filter((task) => task.id !== taskToDelete.id))
+    setTaskToDelete(null)
+  }
+
+  function openTaskEditor(mode, task = null) {
+    if (mode === 'edit') setTaskToEdit(task)
+    else setTaskEditor({ mode, task })
+  }
+
   const pageContent = {
     Dashboard: (
       <Dashboard
         tasks={tasks}
         setTasks={setTasks}
-        projects={projects}
-        onEditTask={setTaskToEdit}
+        onAddTask={() => openTaskEditor('add')}
+        onEditTask={(task) => openTaskEditor('edit', task)}
+        onDeleteTask={setTaskToDelete}
       />
     ),
     'My Tasks': (
       <MyTasksPage
         tasks={tasks}
         setTasks={setTasks}
-        onEditTask={setTaskToEdit}
+        onEditTask={(task) => openTaskEditor('edit', task)}
+        onDeleteTask={setTaskToDelete}
       />
     ),
     Projects: (
@@ -749,12 +579,18 @@ export default function App() {
         onCreateProject={createProject}
         onUpdateProject={updateProject}
         onDeleteProject={deleteProject}
-        onEditTask={setTaskToEdit}
+        onEditTask={(task) => openTaskEditor('edit', task)}
         onStatusChange={updateTaskStatus}
       />
     ),
     Team: <TeamPage />,
-    History: <HistoryPage tasks={tasks} />,
+    History: (
+      <HistoryPage
+        tasks={tasks}
+        onEditTask={(task) => openTaskEditor('edit', task)}
+        onDeleteTask={setTaskToDelete}
+      />
+    ),
     Settings: <SettingsPage />,
   }[activePage]
 
@@ -764,6 +600,18 @@ export default function App() {
       <div className="ml-20 lg:ml-64">
         {pageContent}
       </div>
+      {taskEditor && (
+        <TaskEditorModal
+          key={`${taskEditor.mode}-${taskEditor.task?.id ?? 'new'}`}
+          task={taskEditor.task}
+          mode={taskEditor.mode}
+          onClose={() => setTaskEditor(null)}
+          onSave={saveTask}
+          priorities={priorities}
+          statuses={statuses}
+          projects={projects}
+        />
+      )}
       {taskToEdit && (
         <TaskDialog
           key={taskToEdit.id}
@@ -771,6 +619,13 @@ export default function App() {
           projects={projects}
           onClose={() => setTaskToEdit(null)}
           onSubmit={saveTaskChanges}
+        />
+      )}
+      {taskToDelete && (
+        <DeleteTaskDialog
+          task={taskToDelete}
+          onCancel={() => setTaskToDelete(null)}
+          onConfirm={confirmDeleteTask}
         />
       )}
     </div>
