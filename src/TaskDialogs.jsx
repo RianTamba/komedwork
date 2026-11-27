@@ -7,7 +7,15 @@ function getLocalToday() {
   return date.toISOString().slice(0, 10)
 }
 
-export function TaskEditorModal({ task, mode, onClose, onSave, priorities, statuses }) {
+export function TaskEditorModal({
+  task,
+  mode,
+  onClose,
+  onSave,
+  priorities,
+  statuses,
+  projects = [],
+}) {
   const [today] = useState(getLocalToday)
   const [formError, setFormError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -16,6 +24,7 @@ export function TaskEditorModal({ task, mode, onClose, onSave, priorities, statu
     title: task?.title ?? '',
     description: task?.description ?? '',
     project: task?.project ?? '',
+    projectId: task?.projectId ?? '',
     priority: task?.priority ?? 'Medium',
     status: task?.status ?? 'To Do',
     dueDate: task?.dueDate ?? '',
@@ -65,10 +74,12 @@ export function TaskEditorModal({ task, mode, onClose, onSave, priorities, statu
 
     submitLock.current = true
     setIsSubmitting(true)
+    const project = projects.find((item) => item.id === values.projectId)
     onSave({
       ...values,
       title,
-      project: values.project.trim(),
+      project: project?.name ?? '',
+      projectId: project?.id ?? '',
       description: values.description.trim(),
     })
     onClose()
@@ -127,15 +138,18 @@ export function TaskEditorModal({ task, mode, onClose, onSave, priorities, statu
             <label htmlFor="task-project" className="mb-1.5 block text-sm font-medium text-slate-700">
               Project
             </label>
-            <input
+            <select
               id="task-project"
-              name="project"
-              value={values.project}
+              name="projectId"
+              value={values.projectId}
               onChange={updateValue}
-              maxLength={100}
-              placeholder="Project name"
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-            />
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            >
+              <option value="">No project</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

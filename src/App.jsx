@@ -27,6 +27,8 @@ import {
   SettingsPage,
   TeamPage,
 } from './WorkspacePages.jsx'
+import TaskDialog from './TaskDialog.jsx'
+import { DeleteTaskDialog, TaskEditorModal } from './TaskDialogs.jsx'
 import {
   formatDueDate,
   loadTasks,
@@ -35,7 +37,13 @@ import {
   statuses,
   statusColors,
 } from './taskData.js'
-import { DeleteTaskDialog, TaskEditorModal } from './TaskDialogs.jsx'
+import {
+  createProjectId,
+  createProjectsFromTasks,
+  linkTasksToProjects,
+  loadProjects,
+  saveProjects,
+} from './projectData.js'
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard },
@@ -145,7 +153,6 @@ function StatCard({ title, value, subtitle, icon: Icon, iconColor, iconBg }) {
 
 function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
   const [search, setSearch] = useState('')
-
   const [today] = useState(() => {
     const localToday = new Date()
     localToday.setMinutes(localToday.getMinutes() - localToday.getTimezoneOffset())
@@ -348,7 +355,7 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
                 <th className="px-6 py-4 font-medium">Priority</th>
                 <th className="px-6 py-4 font-medium">Status</th>
                 <th className="px-6 py-4 font-medium">Deadline</th>
-                <th className="px-6 py-4"></th>
+                <th className="px-6 py-4 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -446,38 +453,105 @@ function Dashboard({ tasks, setTasks, onAddTask, onEditTask, onDeleteTask }) {
 }
 
 export default function App() {
-  const [tasks, setTasks] = useState(loadTasks)
+  const [initialWorkspace] = useState(() => {
+    const storedTasks = loadTasks()
+    const storedProjects = loadProjects()
+    const projects = storedProjects ?? createProjectsFromTasks(storedTasks)
+    return {
+      tasks: linkTasksToProjects(storedTasks, projects),
+      projects,
+    }
+  })
+  const [tasks, setTasks] = useState(initialWorkspace.tasks)
+  const [projects, setProjects] = useState(initialWorkspace.projects)
   const [activePage, setActivePage] = useState('Dashboard')
   const [taskEditor, setTaskEditor] = useState(null)
+  const [taskToEdit, setTaskToEdit] = useState(null)
   const [taskToDelete, setTaskToDelete] = useState(null)
 
   useEffect(() => {
     saveTasks(tasks)
   }, [tasks])
 
-  function saveTask(values) {
-    if (taskEditor.mode === 'edit') {
-      setTasks((current) =>
-        current.map((task) =>
-          task.id === taskEditor.task.id ? { ...task, ...values } : task,
-        ),
-      )
-      return
-    }
+  useEffect(() => {
+    saveProjects(projects)
+  }, [projects])
 
+  function createProject(values) {
+    setProjects((current) => [
+      {
+        ...values,
+        id: createProjectId(current),
+        createdAt: new Date().toISOString(),
+      },
+      ...current,
+    ])
+  }
+
+  function updateProject(projectId, values) {
+    setProjects((current) => current.map((project) =>
+      project.id === projectId ? { ...project, ...values } : project,
+    ))
+    setTasks((current) => current.map((task) =>
+      task.projectId === projectId ? { ...task, project: values.name } : task,
+    ))
+  }
+
+  function deleteProject(projectId) {
+    const project = projects.find((item) => item.id === projectId)
+    if (!project) return
+
+    setProjects((current) => current.filter((item) => item.id !== projectId))
+    setTasks((current) => current.map((task) => (
+      task.projectId === projectId ||
+      (!task.projectId && task.project.toLocaleLowerCase() === project.name.toLocaleLowerCase())
+        ? { ...task, projectId: '', project: '' }
+        : task
+    )))
+  }
+
+  function updateTaskStatus(taskId, status) {
+    setTasks((current) => current.map((task) =>
+      task.id === taskId ? { ...task, status } : task,
+    ))
+  }
+
+  function saveTask(values) {
+    const project = projects.find((item) => item.id === values.projectId)
     setTasks((current) => {
       const nextId = current.reduce((maxId, task) => Math.max(maxId, task.id), 0) + 1
-      return [{ ...values, id: nextId, category: 'Task' }, ...current]
+      return [
+        {
+          ...values,
+          id: nextId,
+          title: values.title.trim(),
+          projectId: project?.id ?? '',
+          project: project?.name ?? '',
+          category: 'Task',
+        },
+        ...current,
+      ]
     })
+    setTaskEditor(null)
+  }
+
+  function saveTaskChanges(values) {
+    if (!taskToEdit) return
+    setTasks((current) => current.map((task) =>
+      task.id === taskToEdit.id ? { ...task, ...values } : task,
+    ))
+    setTaskToEdit(null)
   }
 
   function confirmDeleteTask() {
+    if (!taskToDelete) return
     setTasks((current) => current.filter((task) => task.id !== taskToDelete.id))
     setTaskToDelete(null)
   }
 
   function openTaskEditor(mode, task = null) {
-    setTaskEditor({ mode, task })
+    if (mode === 'edit') setTaskToEdit(task)
+    else setTaskEditor({ mode, task })
   }
 
   const pageContent = {
@@ -500,9 +574,13 @@ export default function App() {
     ),
     Projects: (
       <ProjectsPage
+        projects={projects}
         tasks={tasks}
+        onCreateProject={createProject}
+        onUpdateProject={updateProject}
+        onDeleteProject={deleteProject}
         onEditTask={(task) => openTaskEditor('edit', task)}
-        onDeleteTask={setTaskToDelete}
+        onStatusChange={updateTaskStatus}
       />
     ),
     Team: <TeamPage />,
@@ -531,6 +609,16 @@ export default function App() {
           onSave={saveTask}
           priorities={priorities}
           statuses={statuses}
+          projects={projects}
+        />
+      )}
+      {taskToEdit && (
+        <TaskDialog
+          key={taskToEdit.id}
+          task={taskToEdit}
+          projects={projects}
+          onClose={() => setTaskToEdit(null)}
+          onSubmit={saveTaskChanges}
         />
       )}
       {taskToDelete && (
